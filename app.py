@@ -53,7 +53,6 @@ def get_current_stats():
             apps = row['app_count']
             spots = row['spots'] if row['spots'] else 0
         else:
-
             forecast = get_median_forecast(conn, prog_id)
             if forecast:
                 apps = forecast['predicted']
@@ -78,7 +77,62 @@ def get_current_stats():
         'stats': stats
     })
 
-# 3. Прогнозная модель 
+# 3. Эндпоинт для экрана руководства  (прогноз и рекомендуемая КЦП)
+@app.route('/api/forecast', methods=['POST'])
+def get_forecast():
+    """
+    Принимает JSON:
+    {
+        "year": 2024,
+        "direction_ids": [1, 2, 3]
+    }
+    Возвращает для каждого направления: прогноз заявлений и рекомендуемую КЦП
+    """
+    data = request.get_json()
+    
+    if not data:
+        return jsonify({'error': 'Необходимо передать JSON'}), 400
+    
+    target_year = data.get('year')
+    direction_ids = data.get('direction_ids')
+    
+    if not target_year:
+        return jsonify({'error': 'Параметр "year" обязателен'}), 400
+    
+    if not direction_ids or not isinstance(direction_ids, list):
+        return jsonify({'error': 'Параметр "direction_ids" должен быть списком'}), 400
+    
+    conn = get_db()
+    
+    results = []
+    for prog_id in direction_ids:
+        prog = conn.execute("SELECT name FROM programs WHERE id = ?", (prog_id,)).fetchone()
+        if not prog:
+            continue
+        
+
+        forecast = get_median_forecast(conn, prog_id)
+        
+        if forecast:
+            target_ratio = 3  
+            recommended_quota = int(forecast['predicted'] / target_ratio)
+            
+            results.append({
+                'direction_id': prog_id,
+                'direction_name': prog['name'],
+                'predicted_applications': forecast['predicted'],
+                'current_quota': forecast['last_quota'],
+                'recommended_quota': max(recommended_quota, 1)  # минимум 1 место
+            })
+    
+    conn.close()
+    
+    return jsonify({
+        'year': target_year,
+        'forecasts': results
+    })
+
+# 4. Прогнозная модель 
 def get_median_forecast(conn, program_id):
     """Прогноз методом медианы на основе истории 2019-2023"""
     history = [2019, 2020, 2021, 2022, 2023]
@@ -100,7 +154,6 @@ def get_median_forecast(conn, program_id):
     if len(ratios) < 2:
         return None
     
-    # Метод медианы 
     ratio = np.median(ratios) if len(ratios) >= 3 else np.mean(ratios)
     
     quota = conn.execute("""
@@ -120,6 +173,7 @@ def get_median_forecast(conn, program_id):
 
 if __name__ == '__main__':
     print("API запущен на http://localhost:5000")
-    print("  GET /api/directions")
-    print("  GET /api/current_stats?year=2024")
+    print("  GET  /api/directions")
+    print("  GET  /api/current_stats?year=2024")
+    print("  POST /api/forecast")
     app.run(debug=True, host='0.0.0.0', port=5000)
