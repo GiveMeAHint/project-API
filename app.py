@@ -14,7 +14,7 @@ def get_db():
     conn.row_factory = sqlite3.Row
     return conn
 
-# 1. Эндпоинт список направлений (id, название)
+# Эндпоинт список направлений (id, название)
 @app.route('/api/directions', methods=['GET'])
 def get_directions():
     conn = get_db()
@@ -25,7 +25,7 @@ def get_directions():
         'directions': [{'id': p['id'], 'name': p['name']} for p in programs]
     })
 
-# 2. Эндпоинт статистика по направлениям (заявления, КЦП, процент)
+# Эндпоинт статистика по направлениям (заявления, КЦП, процент)
 @app.route('/api/current_stats', methods=['GET'])
 def get_current_stats():
     year = request.args.get('year')
@@ -77,7 +77,7 @@ def get_current_stats():
         'stats': stats
     })
 
-# 3. Эндпоинт для экрана руководства  (прогноз и рекомендуемая КЦП)
+# Эндпоинт для экрана руководства (прогноз и рекомендуемая КЦП)
 @app.route('/api/forecast', methods=['POST'])
 def get_forecast():
     """
@@ -110,7 +110,6 @@ def get_forecast():
         if not prog:
             continue
         
-
         forecast = get_median_forecast(conn, prog_id)
         
         if forecast:
@@ -122,7 +121,7 @@ def get_forecast():
                 'direction_name': prog['name'],
                 'predicted_applications': forecast['predicted'],
                 'current_quota': forecast['last_quota'],
-                'recommended_quota': max(recommended_quota, 1)  # минимум 1 место
+                'recommended_quota': max(recommended_quota, 1)
             })
     
     conn.close()
@@ -132,7 +131,67 @@ def get_forecast():
         'forecasts': results
     })
 
-# 4. Прогнозная модель 
+# Эндпоинт для графика тренда заявлений (id названия)
+@app.route('/api/trend', methods=['GET'])
+def get_trend():
+    """
+    Принимает параметры:
+    - direction_id (обязательный)
+    - forecast_year (опциональный, по умолчанию 2024)
+    
+    Возвращает историю заявлений за 2019-2023 и прогноз на указанный год
+    """
+    direction_id = request.args.get('direction_id')
+    forecast_year = request.args.get('forecast_year', 2024)
+    
+    if not direction_id:
+        return jsonify({'error': 'Параметр "direction_id" обязателен'}), 400
+    
+    try:
+        prog_id = int(direction_id)
+        target_year = int(forecast_year)
+    except ValueError:
+        return jsonify({'error': 'Параметры должны быть целыми числами'}), 400
+    
+    conn = get_db()
+    
+    prog = conn.execute("SELECT name FROM programs WHERE id = ?", (prog_id,)).fetchone()
+    if not prog:
+        conn.close()
+        return jsonify({'error': 'Направление не найдено'}), 404
+    
+    history = []
+    for year in [2019, 2020, 2021, 2022, 2023]:
+        row = conn.execute("""
+            SELECT a.app_count, q.spots 
+            FROM applications a
+            LEFT JOIN quotas q ON q.year = a.year AND q.program_id = a.program_id
+            WHERE a.program_id = ? AND a.year = ?
+        """, (prog_id, year)).fetchone()
+        
+        history.append({
+            'year': year,
+            'applications': row['app_count'] if row and row['app_count'] else None,
+            'quotas': row['spots'] if row and row['spots'] else None
+        })
+    
+    # Получаем прогноз на запрошенный год
+    forecast = get_median_forecast(conn, prog_id)
+    
+    conn.close()
+    
+    return jsonify({
+        'direction_id': prog_id,
+        'direction_name': prog['name'],
+        'history': history,
+        'forecast': {
+            'year': target_year,
+            'predicted_applications': forecast['predicted'] if forecast else None,
+            'current_quota': forecast['last_quota'] if forecast else None
+        } if forecast else None
+    })
+
+# Прогнозная модель 
 def get_median_forecast(conn, program_id):
     """Прогноз методом медианы на основе истории 2019-2023"""
     history = [2019, 2020, 2021, 2022, 2023]
@@ -176,4 +235,5 @@ if __name__ == '__main__':
     print("  GET  /api/directions")
     print("  GET  /api/current_stats?year=2024")
     print("  POST /api/forecast")
+    print("  GET  /api/trend?direction_id=1&forecast_year=2024")
     app.run(debug=True, host='0.0.0.0', port=5000)
