@@ -14,6 +14,51 @@ def get_db():
     conn.row_factory = sqlite3.Row
     return conn
 
+# Эндпоинт авторизация и вход
+@app.route('/api/login', methods=['POST'])
+def login():
+    """
+    Принимает JSON:
+    {
+        "username": "admin",
+        "password": "admin123"
+    }
+    Возвращает статус авторизации и роль пользователя
+    """
+    data = request.get_json()
+    
+    if not data:
+        return jsonify({'error': 'Необходимо передать JSON'}), 400
+    
+    username = data.get('username')
+    password = data.get('password')
+    
+    if not username or not password:
+        return jsonify({'error': 'Поля "username" и "password" обязательны'}), 400
+    
+    conn = get_db()
+    
+    user = conn.execute(
+        "SELECT id, username, role FROM users WHERE username = ? AND password = ?",
+        (username, password)
+    ).fetchone()
+    
+    conn.close()
+    
+    if user:
+        return jsonify({
+            'success': True,
+            'user_id': user['id'],
+            'username': user['username'],
+            'role': user['role'],
+            'message': f'Добро пожаловать, {user["username"]}!'
+        })
+    else:
+        return jsonify({
+            'success': False,
+            'error': 'Неверный логин или пароль'
+        }), 401
+
 # Эндпоинт список направлений (id, название)
 @app.route('/api/directions', methods=['GET'])
 def get_directions():
@@ -80,14 +125,6 @@ def get_current_stats():
 # Эндпоинт для экрана руководства (прогноз и рекомендуемая КЦП)
 @app.route('/api/forecast', methods=['POST'])
 def get_forecast():
-    """
-    Принимает JSON:
-    {
-        "year": 2024,
-        "direction_ids": [1, 2, 3]
-    }
-    Возвращает для каждого направления: прогноз заявлений и рекомендуемую КЦП
-    """
     data = request.get_json()
     
     if not data:
@@ -131,16 +168,9 @@ def get_forecast():
         'forecasts': results
     })
 
-# Эндпоинт для графика тренда заявлений (id названия)
+# Эндпоинт для графика тренда заявлений
 @app.route('/api/trend', methods=['GET'])
 def get_trend():
-    """
-    Принимает параметры:
-    - direction_id (обязательный)
-    - forecast_year (опциональный, по умолчанию 2024)
-    
-    Возвращает историю заявлений за 2019-2023 и прогноз на указанный год
-    """
     direction_id = request.args.get('direction_id')
     forecast_year = request.args.get('forecast_year', 2024)
     
@@ -175,7 +205,6 @@ def get_trend():
             'quotas': row['spots'] if row and row['spots'] else None
         })
     
-    # Получаем прогноз на запрошенный год
     forecast = get_median_forecast(conn, prog_id)
     
     conn.close()
@@ -232,6 +261,7 @@ def get_median_forecast(conn, program_id):
 
 if __name__ == '__main__':
     print("API запущен на http://localhost:5000")
+    print("  POST /api/login")
     print("  GET  /api/directions")
     print("  GET  /api/current_stats?year=2024")
     print("  POST /api/forecast")
