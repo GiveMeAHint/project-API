@@ -260,10 +260,10 @@ def get_median_forecast(conn, program_id):
     }
 
 if __name__ == '__main__':
-    print("API запущен на http://localhost:5000")
-    print("  POST /api/login")
-    print("  GET  /api/directions")
-    print("  GET  /api/current_stats?year=2024")
-    print("  POST /api/forecast")
-    print("  GET  /api/trend?direction_id=1&forecast_year=2024")
+    #print("API запущен на http://localhost:5000")
+    #print("  POST /api/login")
+    #print("  GET  /api/directions")
+    #print("  GET  /api/current_stats?year=2024")
+    #print("  POST /api/forecast")
+    #print("  GET  /api/trend?direction_id=1&forecast_year=2024")
     app.run(debug=True, host='0.0.0.0', port=5000)
